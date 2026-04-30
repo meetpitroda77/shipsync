@@ -908,7 +908,6 @@ class ShipmentController extends Controller
 
 
 
-
             Payment::create([
                 'shipment_id' => $shipment->id,
                 'tracking_id' => $shipment->tracking_id,
@@ -924,6 +923,7 @@ class ShipmentController extends Controller
                 'payment_status' => 'pending',
 
             ]);
+
 
 
             if ($request->is('api/*')) {
@@ -1080,8 +1080,6 @@ class ShipmentController extends Controller
 
     public function success(Request $request, $shipmentId)
     {
-
-
         $shipment = Shipment::find($shipmentId);
 
         if (!$shipment) {
@@ -1096,6 +1094,31 @@ class ShipmentController extends Controller
                 ->with('success', 'Payment successful');
         }
 
+        if ($request->session_id) {
+
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            $session = StripeSession::retrieve($request->session_id);
+
+            if ($session && $session->payment_status === 'paid') {
+
+                $payment->update([
+                    'transaction_id' => $session->payment_intent,
+                    'payment_status' => 'paid',
+                    'paid_at' => now(),
+                ]);
+
+                $shipment->update(['status' => 'pending_assigned']);
+
+                return redirect()
+                    ->route(auth()->user()->role . '.shipments')
+                    ->with('success', 'Payment successful');
+            }
+        }
+
+        return redirect()
+            ->route(auth()->user()->role . '.shipments')
+            ->with('error', 'Payment not completed');
     }
     public function cancel($shipmentId)
     {
@@ -1145,15 +1168,21 @@ class ShipmentController extends Controller
             ],
             'mode' => 'payment',
             'client_reference_id' => $shipment->id,
-
-            'success_url' => route($successRoute, ['shipment' => $shipment->id]),
-            'cancel_url' => route($cancelRoute, ['shipment' => $shipment->id]),
             'payment_intent_data' => [
                 'metadata' => [
                     'shipment_id' => $shipment->id
                 ]
             ],
 
+            'success_url' => route(auth()->user()->role . '.shipments.success', [
+                'shipment' => $shipment->id
+            ]) . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => route(auth()->user()->role . '.shipments.cancel', ['shipment' => $shipment->id]),
+
+        ]);
+
+        $payment->update([
+            'session_id' => $session->id
         ]);
 
         return redirect($session->url);

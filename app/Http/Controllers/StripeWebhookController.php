@@ -42,10 +42,12 @@ class StripeWebhookController extends Controller
                 if (!$shipment)
                     break;
 
-                if ($shipment->status === 'pending_assigned')
-                    break;
+                $payment = Payment::where('shipment_id', $shipment->id)->first();
 
-                Payment::where('shipment_id', $shipment->id)->update([
+                if ($payment && $payment->payment_status === 'paid') {
+                    break;
+                }
+                Payment::where('session_id', $session->id)->update([
                     'transaction_id' => $session->payment_intent,
                     'payment_status' => 'paid',
                     'paid_at' => now(),
