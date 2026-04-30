@@ -27,11 +27,13 @@ class StripeWebhookController extends Controller
 
         switch ($event->type) {
 
-            case 'payment_intent.succeeded':
+            case 'checkout.session.completed':
 
-                $paymentIntent = $event->data->object;
+                $session = $event->data->object;
 
-                $shipmentId = $paymentIntent->metadata->shipment_id ?? null;
+                $shipmentId = $session->client_reference_id
+                    ?? $session->metadata->shipment_id
+                    ?? null;
 
                 if (!$shipmentId)
                     break;
@@ -44,8 +46,7 @@ class StripeWebhookController extends Controller
                     break;
 
                 Payment::where('shipment_id', $shipment->id)->update([
-                    'transaction_id' => $paymentIntent->id,
-                    'amount' => $paymentIntent->amount / 100,
+                    'transaction_id' => $session->payment_intent,
                     'payment_status' => 'paid',
                     'paid_at' => now(),
                 ]);
@@ -54,13 +55,13 @@ class StripeWebhookController extends Controller
 
                 $shipment->logs()->create([
                     'status' => 'pending_assigned',
-                    'description' => 'Payment successful via PaymentIntent'
+                    'description' => 'Payment successful via Checkout Session'
                 ]);
+
                 $creator = User::find($shipment->created_by);
                 if ($creator) {
                     $creator->notify(new ShipmentStatusNotification($shipment));
                 }
-
 
                 break;
             case 'payment_intent.payment_failed':
@@ -142,7 +143,7 @@ class StripeWebhookController extends Controller
                     ]);
                 }
 
-              
+
 
                 \Log::info('Checkout session expired handled', [
                     'shipment_id' => $shipment->id,

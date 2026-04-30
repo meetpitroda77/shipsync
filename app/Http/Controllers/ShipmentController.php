@@ -865,20 +865,6 @@ class ShipmentController extends Controller
 
 
 
-            Payment::create([
-                'shipment_id' => $shipment->id,
-                'tracking_id' => $shipment->tracking_id,
-                'user_id' => $shipment->created_by,
-
-                'amount' => $finalTotal,
-                'subtotal' => $totalAmount,
-                'tax' => $tax,
-                'insurance' => $insurance,
-
-                'payment_method' => 'stripe',
-                'payment_status' => 'pending',
-            ]);
-
 
             $shipment->update(['status' => 'pending_payment']);
 
@@ -921,6 +907,23 @@ class ShipmentController extends Controller
             ]);
 
 
+
+
+            Payment::create([
+                'shipment_id' => $shipment->id,
+                'tracking_id' => $shipment->tracking_id,
+                'user_id' => $shipment->created_by,
+                'session_id' => $session->id,
+
+                'amount' => $finalTotal,
+                'subtotal' => $totalAmount,
+                'tax' => $tax,
+                'insurance' => $insurance,
+
+                'payment_method' => 'stripe',
+                'payment_status' => 'pending',
+
+            ]);
 
 
             if ($request->is('api/*')) {
@@ -1093,9 +1096,6 @@ class ShipmentController extends Controller
                 ->with('success', 'Payment successful');
         }
 
-        return redirect()
-            ->route(auth()->user()->role . '.shipments')
-            ->with('error', 'Payment not completed');
     }
     public function cancel($shipmentId)
     {

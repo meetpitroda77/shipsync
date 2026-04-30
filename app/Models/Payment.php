@@ -22,6 +22,7 @@ class Payment extends Model
         'transaction_id',
         'payment_status',
         'paid_at',
+        'session_id'
 
     ];
 
