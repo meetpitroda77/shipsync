@@ -107,22 +107,21 @@ $(document).on('submit', '.updateStatusForm', function (e) {
         },
 
         error: function (xhr) {
-
             let errors = xhr.responseJSON.errors;
 
             form.find('.invalid-feedback').remove();
             form.find('.is-invalid').removeClass('is-invalid');
 
-            $.each(errors, function (key, value) {
-
-                let input = form.find('[name="' + key + '"]');
+            $.each(errors, function (index, error) {
+                let input = form.find('[name="' + error.field + '"]');
 
                 input.addClass('is-invalid');
 
-                input.after('<div class="invalid-feedback">' + value[0] + '</div>');
+                if (input.next('.invalid-feedback').length === 0) {
+                    input.after('<div class="invalid-feedback">' + error.message + '</div>');
+                }
             });
         }
-
     });
 
 });

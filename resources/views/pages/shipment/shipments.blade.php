@@ -276,10 +276,10 @@
                                                                     <div class="modal-body">
                                                                         @if(in_array($role, ['staff', 'admin']))
 
-                                                                            <label for="agentid" class="mb-3">Shipment Assigned to Delivery
+                                                                            <label for="agentid" class="mt-3">Shipment Assigned to Delivery
                                                                                 Agent</label>
                                                                             <select id="agentid" name="agentid"
-                                                                                class="form-select mb-3 @error('agentid') is-invalid @enderror"
+                                                                                class="form-select mt-1 @error('agentid') is-invalid @enderror"
                                                                                 aria-label="Select Agent">
                                                                                 <option selected disabled>Select Agent</option>
                                                                                 @foreach ($users as $user)
@@ -293,9 +293,9 @@
                                                                             @enderror
                                                                         @endif
 
-                                                                        <label for="status" class="mb-3">Change Status</label>
+                                                                        <label for="status" class="mt-3">Change Status</label>
                                                                         <select name="status"
-                                                                            class="form-select mb-3 status-select @error('status') is-invalid @enderror">
+                                                                            class="form-select mt-1  status-select @error('status') is-invalid @enderror">
                                                                             <option selected disabled>Open this select Status</option>
                                                                             @if ($role != "agent")
 
@@ -317,19 +317,19 @@
                                                                         @enderror
 
                                                                         <div class="delivery-proof" style="display:none;">
-                                                                            <label for="delivery_proof" class="mb-3">Upload Delivery Proof
+                                                                            <label for="delivery_proof" class="mt-3">Upload Delivery Proof
                                                                                 (Image)</label>
                                                                             <input type="file" name="delivery_proof" id="delivery_proof"
-                                                                                class="form-control mb-3 @error('delivery_proof') is-invalid @enderror"
+                                                                                class="form-control mt-1  @error('delivery_proof') is-invalid @enderror"
                                                                                 accept="image/*">
                                                                             @error('delivery_proof')
                                                                                 <div class="invalid-feedback">{{ $message }}</div>
                                                                             @enderror
                                                                         </div>
                                                                         <div class="failed-reason" style="display:none;">
-                                                                            <label class="mb-3">Failure Reason</label>
+                                                                            <label class="mt-3">Failure Reason</label>
                                                                             <textarea name="failed_reason"
-                                                                                class="form-control mb-3 @error('failed_reason') is-invalid @enderror"
+                                                                                class="form-control @error('failed_reason') is-invalid @enderror"
                                                                                 placeholder="Enter reason"></textarea>
 
                                                                             @error('failed_reason')
