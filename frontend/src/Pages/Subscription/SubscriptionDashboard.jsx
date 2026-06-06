@@ -191,15 +191,23 @@ const SubscriptionDashboard = () => {
 
   const handleUpgrade = async () => {
     if (upgradeInProgress.current) return;
+
     upgradeInProgress.current = true;
     setUpgradeDialogOpen(false);
     setRefreshing(true);
 
     try {
-      await upgradeToPro();
+      const response = await upgradeToPro();
+
+      if (response.success) {
+        setTimeout(async () => {
+          await fetchSubscriptionData();
+        }, 1000);
+      }
+
       setMessage({
         open: true,
-        text: "Upgraded to Pro plan successfully!",
+        text: "Upgrade request submitted. Waiting for payment confirmation",
         severity: "success",
       });
     } catch (error) {
@@ -209,9 +217,8 @@ const SubscriptionDashboard = () => {
         severity: "error",
       });
     } finally {
-      await fetchSubscriptionData();
-      setRefreshing(false);
       upgradeInProgress.current = false;
+      setRefreshing(false);
     }
   };
 

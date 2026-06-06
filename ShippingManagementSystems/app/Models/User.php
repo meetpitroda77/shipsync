@@ -31,6 +31,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'shipment_counter_reset_at',
         'pm_type',
         'pm_last_four',
+        'previous_subscription_status',
+        'previous_subscription_plan'
     ];
 
     protected $hidden = [
@@ -68,7 +70,7 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
 
-    
+
     public function hasActiveSubscription(): bool
     {
         if (in_array($this->subscription_status, ['active', 'trialing'])) {
@@ -96,20 +98,19 @@ class User extends Authenticatable implements MustVerifyEmail
         return in_array($this->subscription_status, ['cancelled', 'canceled']);
     }
 
-   
+
     public function isSubscriptionIncomplete(): bool
     {
         return in_array($this->subscription_status, ['incomplete', 'incomplete_expired']);
     }
 
-  
+
     public function isInactive(): bool
     {
         return in_array($this->subscription_status, [
             'inactive',
             'incomplete_expired',
             'unpaid',
-            'paused',
         ]);
     }
 

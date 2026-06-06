@@ -32,7 +32,6 @@ return new class extends Migration {
             $table->string('pm_type')->nullable()->after('shipment_counter_reset_at');
             $table->string('pm_last_four')->nullable()->after('pm_type');
 
-            // Add indexes for performance
             $table->index('subscription_status');
             $table->index('subscription_plan');
             $table->index(['subscription_status', 'subscription_ends_at']);

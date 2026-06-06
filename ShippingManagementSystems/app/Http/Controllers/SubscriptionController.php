@@ -71,7 +71,7 @@ class SubscriptionController extends Controller
 
             $subscriptionData = [
                 'payment_behavior' => 'allow_incomplete',
-                'trial_period_days' => 7,
+                // 'trial_period_days' => 7,
 
             ];
 
@@ -403,52 +403,57 @@ class SubscriptionController extends Controller
                         'price' => $proPriceId,
                     ]
                 ],
-                'proration_behavior' => 'create_prorations',
+                'proration_behavior' => 'always_invoice',
             ]);
+            // 'proration_behavior' => 'create_prorations'
 
-            $periodEnd = $updated->current_period_end
-                ?? ($updated->items->data[0]->current_period_end ?? null);
+            // $periodEnd = $updated->current_period_end
+            //     ?? ($updated->items->data[0]->current_period_end ?? null);
 
 
-            $correctStatus = $updated->status;
-            if (
-                $updated->status === 'active' &&
-                $updated->trial_end &&
-                $updated->trial_end > now()->timestamp
-            ) {
-                $correctStatus = 'trialing';
-            }
+            // $correctStatus = $updated->status;
+            // if (
+            //     $updated->status === 'active' &&
+            //     $updated->trial_end &&
+            //     $updated->trial_end > now()->timestamp
+            // ) {
+            //     $correctStatus = 'trialing';
+            // }
 
-            $updateData = [
-                'subscription_plan' => 'pro',
-                'subscription_status' => $correctStatus,
-                'current_period_end' => $periodEnd ? Carbon::createFromTimestamp($periodEnd) : null,
-                'shipments_used_this_month' => 0,
-                'shipment_counter_reset_at' => now(),
-            ];
+            // $updateData = [
+            //     'subscription_plan' => 'pro',
+            //     'subscription_status' => $correctStatus,
+            //     'current_period_end' => $periodEnd ? Carbon::createFromTimestamp($periodEnd) : null,
+            //     'shipments_used_this_month' => 0,
+            //     'shipment_counter_reset_at' => now(),
+            // ];
 
-            if ($correctStatus === 'trialing' && $updated->trial_end) {
-                $updateData['trial_ends_at'] = Carbon::createFromTimestamp($updated->trial_end);
-            } else {
-                $updateData['trial_ends_at'] = null;
-            }
+            // if ($correctStatus === 'trialing' && $updated->trial_end) {
+            //     $updateData['trial_ends_at'] = Carbon::createFromTimestamp($updated->trial_end);
+            // } else {
+            //     $updateData['trial_ends_at'] = null;
+            // }
 
-            $user->update($updateData);
+            // $user->update($updateData);
 
-            try {
-                $user->notify(new SubscriptionNotification('upgraded', 'pro', 'basic'));
-            } catch (\Exception $e) {
-                Log::error('Failed to send upgrade notification: ' . $e->getMessage());
-            }
+            // try {
+            //     $user->notify(new SubscriptionNotification('upgraded', 'pro', 'basic'));
+            // } catch (\Exception $e) {
+            //     Log::error('Failed to send upgrade notification: ' . $e->getMessage());
+            // }
 
+            // return response()->json([
+            //     'success' => true,
+            //     'message' => 'Successfully upgraded to Pro plan!',
+            //     'data' => [
+            //         'plan' => 'pro',
+            //         'status' => $correctStatus,
+            //         'next_billing_date' => $periodEnd,
+            //     ],
+            // ]);
             return response()->json([
                 'success' => true,
-                'message' => 'Successfully upgraded to Pro plan!',
-                'data' => [
-                    'plan' => 'pro',
-                    'status' => $correctStatus,
-                    'next_billing_date' => $periodEnd,
-                ],
+                'message' => 'Upgrade request submitted. Waiting for payment confirmation.',
             ]);
         } catch (\Exception $e) {
             Log::error('Error upgrading subscription: ' . $e->getMessage());

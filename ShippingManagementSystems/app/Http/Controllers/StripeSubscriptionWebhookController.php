@@ -68,6 +68,7 @@ class StripeSubscriptionWebhookController extends Controller
             case 'invoice.payment_action_required':
                 $this->handleInvoicePaymentActionRequired($event->data->object);
                 break;
+
             default:
                 Log::info('No handler for webhook type', ['type' => $event->type]);
         }
@@ -115,6 +116,13 @@ class StripeSubscriptionWebhookController extends Controller
 
     private function handleSubscriptionCreated($subscription): void
     {
+        Log::info('SUBSCRIPTION CREATED', [
+            'subscription_id' => $subscription->id,
+            'customer' => $subscription->customer,
+            'status' => $subscription->status,
+        ]);
+
+
         $this->syncSubscription($subscription);
 
         $user = $this->findUser($subscription);
@@ -181,13 +189,6 @@ class StripeSubscriptionWebhookController extends Controller
         }
 
 
-        if ($oldPlan !== $user->subscription_plan) {
-            try {
-                $user->notify(new SubscriptionNotification('plan_changed', $user->subscription_plan, $oldPlan));
-            } catch (\Exception $e) {
-                Log::error('Plan change notification error: ' . $e->getMessage());
-            }
-        }
 
 
         if ($oldStatus !== 'past_due' && $newStatus === 'past_due') {
@@ -249,83 +250,7 @@ class StripeSubscriptionWebhookController extends Controller
         ]);
     }
 
-
-    private function handleInvoicePaid($invoice): void
-    {
-        if (!$invoice->subscription)
-            return;
-
-        $user = User::where('stripe_id', $invoice->customer)->first();
-        if (!$user)
-            return;
-
-        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-
-        try {
-            $subscription = \Stripe\Subscription::retrieve([
-                'id' => $invoice->subscription,
-                'expand' => ['default_payment_method'],
-            ]);
-
-            $wasPastDue = $user->subscription_status === 'past_due';
-            $wasUnpaid = $user->subscription_status === 'unpaid';
-            $wasPaused = $user->subscription_status === 'paused';
-            $wasIncomplete = in_array($user->subscription_status, ['incomplete', 'incomplete_expired']);
-
-            $newStatus = $subscription->cancel_at_period_end ? 'cancelled' : 'active';
-
-            $updateData = [
-                'subscription_status' => $newStatus,
-                'current_period_end' => $this->getPeriodEnd($subscription),
-                'shipments_used_this_month' => 0,
-                'shipment_counter_reset_at' => now(),
-            ];
-
-            if ($newStatus === 'active' && $user->trial_ends_at) {
-                $updateData['trial_ends_at'] = null;
-            }
-
-            if (!$subscription->cancel_at_period_end) {
-                $updateData['subscription_ends_at'] = null;
-            }
-
-            $pmType = $this->getPaymentMethodType($subscription);
-            $pmLastFour = $this->getPaymentMethodLastFour($subscription);
-            if ($pmType !== null)
-                $updateData['pm_type'] = $pmType;
-            if ($pmLastFour !== null)
-                $updateData['pm_last_four'] = $pmLastFour;
-
-            $user->update($updateData);
-
-            if ($wasPastDue || $wasUnpaid || $wasPaused) {
-                try {
-                    $user->notify(new SubscriptionNotification('payment_recovered', $user->subscription_plan));
-                } catch (\Exception $e) {
-                    Log::error('Payment recovered notification error: ' . $e->getMessage());
-                }
-            }
-
-            if ($wasIncomplete) {
-                try {
-                    $user->notify(new SubscriptionNotification('payment_confirmed', $user->subscription_plan));
-                } catch (\Exception $e) {
-                    Log::error('Payment confirmed notification error: ' . $e->getMessage());
-                }
-            }
-
-            Log::info('invoice.paid processed', [
-                'user_id' => $user->id,
-                'old_status' => $user->getOriginal('subscription_status'),
-                'new_status' => $newStatus,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('handleInvoicePaid error: ' . $e->getMessage());
-        }
-    }
-
-
-
+   
     private function handleInvoicePaymentFailed($invoice): void
     {
         if (!$invoice->subscription)
@@ -375,25 +300,34 @@ class StripeSubscriptionWebhookController extends Controller
         Log::info('invoice.payment_action_required', ['user_id' => $user->id]);
     }
 
-
     private function syncSubscription($subscription): void
     {
+        Log::info('SYNC START', [
+            'subscription_id' => $subscription->id,
+            'status' => $subscription->status,
+        ]);
+
         $user = $this->findUser($subscription);
-        if (!$user)
-            return;
+        if (!$user) return;
+
+        Log::info('USER FOUND', [
+            'user_id'   => $user->id,
+            'stripe_id' => $user->stripe_id,
+        ]);
 
         \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
 
         try {
             $subscription = \Stripe\Subscription::retrieve([
-                'id' => $subscription->id,
+                'id'     => $subscription->id,
                 'expand' => ['default_payment_method'],
             ]);
+
             Log::info('Stripe Subscription Update', [
-                'subscription_id' => $subscription->id,
-                'status' => $subscription->status,
+                'subscription_id'      => $subscription->id,
+                'status'               => $subscription->status,
                 'cancel_at_period_end' => $subscription->cancel_at_period_end,
-                'canceled_at' => $subscription->canceled_at,
+                'canceled_at'          => $subscription->canceled_at,
             ]);
         } catch (\Exception $e) {
             Log::error('syncSubscription retrieve error: ' . $e->getMessage());
@@ -403,10 +337,7 @@ class StripeSubscriptionWebhookController extends Controller
         $stripeStatus = $subscription->status;
         $mappedStatus = self::STRIPE_STATUS_MAP[$stripeStatus] ?? 'inactive';
 
-        if (
-            $subscription->cancel_at_period_end &&
-            in_array($stripeStatus, ['active', 'trialing'])
-        ) {
+        if ($subscription->cancel_at_period_end && in_array($stripeStatus, ['active', 'trialing'])) {
             $mappedStatus = 'cancelled';
         }
 
@@ -414,18 +345,30 @@ class StripeSubscriptionWebhookController extends Controller
         $oldPlan = $user->subscription_plan;
 
         $updateData = [
-            'subscription_id' => $subscription->id,
-            'subscription_status' => $mappedStatus,
-            'subscription_plan' => $newPlan,
-            'current_period_end' => $this->getPeriodEnd($subscription),
-            'trial_ends_at' => $this->getTrialEndsAt($subscription),
+            'subscription_id'      => $subscription->id,
+            'subscription_status'  => $mappedStatus,
+            'current_period_end'   => $this->getPeriodEnd($subscription),
+            'trial_ends_at'        => $this->getTrialEndsAt($subscription),
             'subscription_ends_at' => $this->getEndsAt($subscription),
         ];
 
-        if ($oldPlan !== $newPlan) {
-            $updateData['shipments_used_this_month'] = 0;
-            $updateData['shipment_counter_reset_at'] = now();
+        if ($user->subscription_status !== $mappedStatus) {
+            $updateData['previous_subscription_status'] = $user->subscription_status;
         }
+
+        if ($oldPlan !== $newPlan && empty($user->previous_subscription_plan)) {
+            $updateData['previous_subscription_plan'] = $oldPlan;
+        }
+
+        if (in_array($mappedStatus, ['active', 'trialing'])) {
+            $updateData['subscription_plan'] = $newPlan;
+
+            if ($oldPlan !== $newPlan) {
+                $updateData['shipments_used_this_month'] = 0;
+                $updateData['shipment_counter_reset_at'] = now();
+            }
+        }
+
 
         if ($mappedStatus === 'active' && $user->trial_ends_at) {
             $updateData['trial_ends_at'] = null;
@@ -435,24 +378,126 @@ class StripeSubscriptionWebhookController extends Controller
             $updateData['subscription_ends_at'] = null;
         }
 
-        $pmType = $this->getPaymentMethodType($subscription);
+        $pmType     = $this->getPaymentMethodType($subscription);
         $pmLastFour = $this->getPaymentMethodLastFour($subscription);
-        if ($pmType !== null)
-            $updateData['pm_type'] = $pmType;
-        if ($pmLastFour !== null)
-            $updateData['pm_last_four'] = $pmLastFour;
+        if ($pmType !== null)     $updateData['pm_type']      = $pmType;
+        if ($pmLastFour !== null) $updateData['pm_last_four'] = $pmLastFour;
+
+        Log::info('UPDATING USER', [
+            'mapped_status'   => $mappedStatus,
+            'previous_status' => $user->subscription_status,
+            'status_changed'  => $user->subscription_status !== $mappedStatus,
+            'old_plan'        => $oldPlan,
+            'new_plan'        => $newPlan,
+            'plan_changed'    => $oldPlan !== $newPlan,
+        ]);
 
         $user->update($updateData);
 
         Log::info('Subscription synced', [
-            'user_id' => $user->id,
-            'stripe_status' => $stripeStatus,
-            'mapped_status' => $mappedStatus,
-            'cancel_at_period_end' => $subscription->cancel_at_period_end
+            'user_id'              => $user->id,
+            'stripe_status'        => $stripeStatus,
+            'mapped_status'        => $mappedStatus,
+            'cancel_at_period_end' => $subscription->cancel_at_period_end,
         ]);
     }
+ 
+    private function handleInvoicePaid($invoice): void
+    {
+        if (!$invoice->subscription) return;
 
+        $user = User::where('stripe_id', $invoice->customer)->first();
+        if (!$user) return;
 
+        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+        try {
+            $subscription = \Stripe\Subscription::retrieve([
+                'id'     => $invoice->subscription,
+                'expand' => ['default_payment_method'],
+            ]);
+
+            $currentStatus  = $user->subscription_status;
+            $previousStatus = $user->previous_subscription_status;
+
+            $wasPastDue  = $currentStatus === 'past_due'  || $previousStatus === 'past_due';
+            $wasUnpaid   = $currentStatus === 'unpaid'    || $previousStatus === 'unpaid';
+            $wasPaused   = $currentStatus === 'paused'    || $previousStatus === 'paused';
+            $wasIncomplete = in_array($currentStatus,  ['incomplete', 'incomplete_expired'])
+                || in_array($previousStatus, ['incomplete', 'incomplete_expired']);
+
+            $newPlan = $this->getPlanFromPriceId($subscription->items->data[0]->price->id);
+            $newStatus = $subscription->cancel_at_period_end ? 'cancelled' : 'active';
+
+            $oldPlan = $user->previous_subscription_plan ?? $user->subscription_plan;
+
+            $updateData = [
+                'subscription_status'          => $newStatus,
+                'subscription_plan'            => $newPlan,
+                'current_period_end'           => $this->getPeriodEnd($subscription),
+                'shipments_used_this_month'    => 0,
+                'shipment_counter_reset_at'    => now(),
+                'previous_subscription_status' => null, 
+                'previous_subscription_plan'   => null, 
+            ];
+
+            if ($newStatus === 'active' && $user->trial_ends_at) {
+                $updateData['trial_ends_at'] = null;
+            }
+
+            if (!$subscription->cancel_at_period_end) {
+                $updateData['subscription_ends_at'] = null;
+            }
+
+            $pmType     = $this->getPaymentMethodType($subscription);
+            $pmLastFour = $this->getPaymentMethodLastFour($subscription);
+            if ($pmType !== null)     $updateData['pm_type']      = $pmType;
+            if ($pmLastFour !== null) $updateData['pm_last_four'] = $pmLastFour;
+
+            $user->update($updateData);
+
+            $planUpgraded = $oldPlan !== $newPlan;
+
+            Log::info('invoice.paid notification check', [
+                'user_id'          => $user->id,
+                'current_status'   => $currentStatus,
+                'previous_status'  => $previousStatus,
+                'old_plan'         => $oldPlan,
+                'new_plan'         => $newPlan,
+                'was_past_due'     => $wasPastDue,
+                'plan_upgraded'    => $planUpgraded,
+            ]);
+
+            if (($wasPastDue || $wasUnpaid || $wasPaused) && $planUpgraded) {
+                try {
+                    $user->notify(new SubscriptionNotification('upgraded', $newPlan, $oldPlan));
+                } catch (\Exception $e) {
+                    Log::error('Upgrade+recovery notification error: ' . $e->getMessage());
+                }
+            } elseif ($planUpgraded) {
+                try {
+                    $user->notify(new SubscriptionNotification('upgraded', $newPlan, $oldPlan));
+                } catch (\Exception $e) {
+                    Log::error('Plan upgrade notification error: ' . $e->getMessage());
+                }
+            } elseif ($wasPastDue || $wasUnpaid || $wasPaused) {
+                try {
+                    $user->notify(new SubscriptionNotification('payment_recovered', $newPlan));
+                } catch (\Exception $e) {
+                    Log::error('Payment recovered notification error: ' . $e->getMessage());
+                }
+            } elseif ($wasIncomplete) {
+                try {
+                    $user->notify(new SubscriptionNotification('payment_confirmed', $newPlan));
+                } catch (\Exception $e) {
+                    Log::error('Payment confirmed notification error: ' . $e->getMessage());
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('handleInvoicePaid error: ' . $e->getMessage());
+        }
+    }
     private function findUser($subscription): ?User
     {
         return User::where('subscription_id', $subscription->id)
